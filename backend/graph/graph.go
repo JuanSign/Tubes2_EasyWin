@@ -95,6 +95,44 @@ func (g *Graph) DFS(start string) {
 	dfs(startIdx, 0)
 }
 
+func (g *Graph) BFS(start string) {
+	startIdx, exists := g.NameToIndex[start]
+	if !exists {
+		fmt.Println("Element not found!")
+		return
+	}
+	visited := make(map[int]bool)
+
+	var BFS func(idx int, depth int)
+	BFS = func(idx int, depth int) {
+
+		queue := []int{}
+		queue = append(queue, idx)
+
+		for len(queue) > 0 {
+
+			current := queue[0]
+			queue = queue[1:]
+			fmt.Printf("%s%s\n", strings.Repeat("-", depth), g.Nodes[current].Name)
+			if visited[current] {
+				continue
+			}
+			visited[current] = true
+			recipes := g.Recipes[current]
+			for _, recipe := range recipes {
+				recipe1 := recipe[0]
+				recipe2 := recipe[1]
+				queue = append(queue, recipe1, recipe2)
+			}
+			depth++
+
+		}
+
+	}
+	BFS(startIdx, 0)
+
+}
+
 func (g *Graph) DebugPrint() {
 	for idx, node := range g.Nodes {
 		fmt.Printf("[%d] %s → ", idx, node.Name)

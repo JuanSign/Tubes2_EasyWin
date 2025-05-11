@@ -31,5 +31,7 @@ func main() {
 
 	g := graph.NewGraph()
 	g.BuildFromElements(elements)
-	g.DebugPrint()
+	// g.DebugPrint()
+	g.BFS("Fire")
+
 }
