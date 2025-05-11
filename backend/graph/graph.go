@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"strings"
 )
 
 type Element struct {
@@ -62,6 +63,36 @@ func (g *Graph) BuildFromElements(elements []Element) {
 			g.Recipes[elementIdx] = append(g.Recipes[elementIdx], [2]int{in1Idx, in2Idx})
 		}
 	}
+}
+
+func (g *Graph) DFS(start string) {
+	startIdx, exists := g.NameToIndex[start]
+	if !exists {
+		fmt.Println("Element not found!")
+		return
+	}
+
+	visited := make(map[int]bool)
+
+	var dfs func(idx int, depth int)
+	dfs = func(idx int, depth int) {
+		fmt.Printf("%s%s\n", strings.Repeat("-", depth), g.Nodes[idx].Name)
+		if visited[idx] {
+			return
+		}
+		visited[idx] = true
+
+		recipes := g.Recipes[idx]
+		if len(recipes) == 0 {
+			return
+		}
+
+		firstRecipe := recipes[0]
+		dfs(firstRecipe[0], depth+1)
+		dfs(firstRecipe[1], depth+1)
+	}
+
+	dfs(startIdx, 0)
 }
 
 func (g *Graph) DebugPrint() {
