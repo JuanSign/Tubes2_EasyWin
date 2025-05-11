@@ -139,7 +139,7 @@ func main() {
 
 	fmt.Printf("Number of elements found: %d\n", len(elements))
 
-	file, err := os.Create("../elements.json")
+	file, err := os.Create("../backend/elements.json")
 	if err != nil {
 		log.Fatal("Error creating JSON file:", err)
 	}
