@@ -10,9 +10,15 @@ type Element struct {
 	Recipe [][]string `json:"recipe"`
 }
 
-type TreeDFS struct {
-	Name   string    `json:"name"`
-	Recipe []TreeDFS `json:"recipe"`
+type NodeJSON struct {
+	Name   string `json:"name"`
+	Id     int    `json:"id"`
+	Parent int    `json:"parent"`
+}
+
+type ReturnJSON struct {
+	Name    string       `json:"name"`
+	Content [][]NodeJSON `json:"content"`
 }
 
 type Node struct {
@@ -54,32 +60,37 @@ func (g *Graph) BuildFromElements(elements []Element) {
 	}
 }
 
-func (g *Graph) AllDFS(start string) TreeDFS {
+func (g *Graph) AllDFS(start string) ReturnJSON {
 	startIdx, exists := g.NameToIndex[start]
 	if !exists {
 		fmt.Println("Element not found!")
-		return TreeDFS{}
+		return ReturnJSON{}
 	}
 
+	result := ReturnJSON{Name: start}
+	curID := 0
 	visited := make(map[int]bool)
 
-	var dfs func(idx int) TreeDFS
-	dfs = func(idx int) TreeDFS {
+	var DFSTraversal func(idx int, parent int)
+	DFSTraversal = func(idx int, parent int) {
 		if visited[idx] {
-			return TreeDFS{Name: g.Nodes[idx].Name, Recipe: []TreeDFS{}}
+			return
 		}
 		visited[idx] = true
-
-		tree := TreeDFS{Name: g.Nodes[idx].Name}
-
 		for _, recipe := range g.Recipes[idx] {
-			tree.Recipe = append(tree.Recipe, dfs(recipe[0]))
-			tree.Recipe = append(tree.Recipe, dfs(recipe[1]))
+			curContent := []NodeJSON{}
+			curContent = append(curContent, NodeJSON{Name: "merger", Id: curID + 1, Parent: parent})
+			curContent = append(curContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: curID + 2, Parent: curID + 1})
+			curContent = append(curContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: curID + 3, Parent: curID + 1})
+			result.Content = append(result.Content, curContent)
+			curID += 4
+			DFSTraversal(recipe[0], curID-2)
+			DFSTraversal(recipe[1], curID-1)
 		}
-		return tree
 	}
 
-	return dfs(startIdx)
+	DFSTraversal(startIdx, 0)
+	return result
 }
 
 func (g *Graph) BFS(start string) {
