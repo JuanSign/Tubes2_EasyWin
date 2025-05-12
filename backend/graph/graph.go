@@ -3,6 +3,7 @@ package graph
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 type Element struct {
@@ -64,32 +65,57 @@ func (g *Graph) AllDFS(start string) ReturnJSON {
 	startIdx, exists := g.NameToIndex[start]
 	if !exists {
 		fmt.Println("Element not found!")
-		return ReturnJSON{}
+		return ReturnJSON{Name: start + " not found!"}
 	}
 
 	result := ReturnJSON{Name: start}
-	curID := 0
+	var curID int
 	visited := make(map[int]bool)
+
+	var mu sync.Mutex
+	var contentMu sync.Mutex
+	var wg sync.WaitGroup
 
 	var DFSTraversal func(idx int, parent int)
 	DFSTraversal = func(idx int, parent int) {
+		defer wg.Done()
+
+		mu.Lock()
 		if visited[idx] {
+			mu.Unlock()
 			return
 		}
 		visited[idx] = true
+		mu.Unlock()
+
 		for _, recipe := range g.Recipes[idx] {
-			curContent := []NodeJSON{}
-			curContent = append(curContent, NodeJSON{Name: "merger", Id: curID + 1, Parent: parent})
-			curContent = append(curContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: curID + 2, Parent: curID + 1})
-			curContent = append(curContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: curID + 3, Parent: curID + 1})
-			result.Content = append(result.Content, curContent)
+			localContent := []NodeJSON{}
+
+			mu.Lock()
+			mergerID := curID + 1
+			in1ID := curID + 2
+			in2ID := curID + 3
 			curID += 4
-			DFSTraversal(recipe[0], curID-2)
-			DFSTraversal(recipe[1], curID-1)
+			mu.Unlock()
+
+			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: parent})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+			contentMu.Lock()
+			result.Content = append(result.Content, localContent)
+			contentMu.Unlock()
+
+			wg.Add(2)
+			go DFSTraversal(recipe[0], in1ID)
+			go DFSTraversal(recipe[1], in2ID)
 		}
 	}
 
-	DFSTraversal(startIdx, 0)
+	wg.Add(1)
+	go DFSTraversal(startIdx, 0)
+	wg.Wait()
+
 	return result
 }
 
