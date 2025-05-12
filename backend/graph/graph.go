@@ -10,6 +10,11 @@ type Element struct {
 	Recipe [][]string `json:"recipe"`
 }
 
+type TreeDFS struct {
+	Name   string    `json:"name"`
+	Recipe []TreeDFS `json:"recipe"`
+}
+
 type Node struct {
 	Name string
 }
@@ -39,25 +44,9 @@ func (g *Graph) addNode(name string) int {
 }
 
 func (g *Graph) BuildFromElements(elements []Element) {
-	terminalElements := map[string]bool{
-		"Water": true,
-		"Fire":  true,
-		"Earth": true,
-		"Air":   true,
-	}
-
 	for _, el := range elements {
-		if terminalElements[el.Name] {
-			g.addNode(el.Name)
-			continue
-		}
-
 		elementIdx := g.addNode(el.Name)
-
 		for _, recipe := range el.Recipe {
-			if len(recipe) != 2 {
-				continue
-			}
 			in1Idx := g.addNode(recipe[0])
 			in2Idx := g.addNode(recipe[1])
 			g.Recipes[elementIdx] = append(g.Recipes[elementIdx], [2]int{in1Idx, in2Idx})
@@ -65,34 +54,32 @@ func (g *Graph) BuildFromElements(elements []Element) {
 	}
 }
 
-func (g *Graph) DFS(start string) {
+func (g *Graph) AllDFS(start string) TreeDFS {
 	startIdx, exists := g.NameToIndex[start]
 	if !exists {
 		fmt.Println("Element not found!")
-		return
+		return TreeDFS{}
 	}
 
 	visited := make(map[int]bool)
 
-	var dfs func(idx int, depth int)
-	dfs = func(idx int, depth int) {
-		fmt.Printf("%s%s\n", strings.Repeat("-", depth), g.Nodes[idx].Name)
+	var dfs func(idx int) TreeDFS
+	dfs = func(idx int) TreeDFS {
 		if visited[idx] {
-			return
+			return TreeDFS{Name: g.Nodes[idx].Name, Recipe: []TreeDFS{}}
 		}
 		visited[idx] = true
 
-		recipes := g.Recipes[idx]
-		if len(recipes) == 0 {
-			return
-		}
+		tree := TreeDFS{Name: g.Nodes[idx].Name}
 
-		firstRecipe := recipes[0]
-		dfs(firstRecipe[0], depth+1)
-		dfs(firstRecipe[1], depth+1)
+		for _, recipe := range g.Recipes[idx] {
+			tree.Recipe = append(tree.Recipe, dfs(recipe[0]))
+			tree.Recipe = append(tree.Recipe, dfs(recipe[1]))
+		}
+		return tree
 	}
 
-	dfs(startIdx, 0)
+	return dfs(startIdx)
 }
 
 func (g *Graph) BFS(start string) {

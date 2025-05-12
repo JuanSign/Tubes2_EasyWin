@@ -31,7 +31,24 @@ func main() {
 
 	g := graph.NewGraph()
 	g.BuildFromElements(elements)
-	// g.DebugPrint()
-	g.BFS("Fire")
 
+	// for debugging
+	// g.DebugPrint()
+
+	// example AllDFS usage
+	// dfsResult := g.AllDFS("Air")
+
+	// dfsResultJSON, err := json.MarshalIndent(dfsResult, "", "  ")
+	// if err != nil {
+	// 	fmt.Println("Error converting to JSON:", err)
+	// 	return
+	// }
+
+	// err = os.WriteFile("dfs_result.json", dfsResultJSON, 0644)
+	// if err != nil {
+	// 	fmt.Println("Error writing to file:", err)
+	// 	return
+	// }
+
+	// fmt.Println("DFS result saved to dfs_result.json")
 }
