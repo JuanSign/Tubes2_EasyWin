@@ -11,7 +11,7 @@ export default function HomePage() {
   const [showPopup, setShowPopup] = useState(false);
   const [algorithm, setAlgorithm] = useState('');
   const [mode, setMode] = useState('');
-  const [diagramData, setDiagramData] = useState<any | null>(null); // 👈
+  const [diagramData, setDiagramData] = useState<any | null>(null);
 
   const handleFirstSubmit = (e: React.FormEvent) => {
     e.preventDefault();
