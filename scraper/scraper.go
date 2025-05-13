@@ -139,18 +139,39 @@ func main() {
 
 	fmt.Printf("Number of elements found: %d\n", len(elements))
 
-	file, err := os.Create("../backend/elements.json")
+	elementsFile, err := os.Create("../backend/elements.json")
 	if err != nil {
-		log.Fatal("Error creating JSON file:", err)
+		log.Fatal("Error creating elements.json:", err)
 	}
-	defer file.Close()
+	defer elementsFile.Close()
 
-	encoder := json.NewEncoder(file)
+	encoder := json.NewEncoder(elementsFile)
 	encoder.SetIndent("", "  ")
 	err = encoder.Encode(elements)
 	if err != nil {
 		log.Fatal("Error encoding elements to JSON:", err)
 	}
+	fmt.Println("Scraped data saved to elements.json")
 
-	fmt.Println("Scraped data has been saved to elements.json")
+	var labels []map[string]string
+	for _, el := range elements {
+		labels = append(labels, map[string]string{
+			"value": el.Name,
+			"label": el.Name,
+		})
+	}
+
+	labelsFile, err := os.Create("../frontend/src/components/labels.json")
+	if err != nil {
+		log.Fatal("Error creating labels.json:", err)
+	}
+	defer labelsFile.Close()
+
+	labelEncoder := json.NewEncoder(labelsFile)
+	labelEncoder.SetIndent("", "  ")
+	err = labelEncoder.Encode(labels)
+	if err != nil {
+		log.Fatal("Error encoding labels to JSON:", err)
+	}
+	fmt.Println("Scraped labels saved to labels.json")
 }
