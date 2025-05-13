@@ -1,8 +1,10 @@
 package graph
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
+	"math/rand"
+	"net/http"
 	"sync"
 )
 
@@ -95,7 +97,7 @@ func (g *Graph) AllDFS(start string) ReturnJSON {
 			mergerID := curID + 1
 			in1ID := curID + 2
 			in2ID := curID + 3
-			curID += 4
+			curID += 3
 			mu.Unlock()
 
 			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: parent})
@@ -119,42 +121,218 @@ func (g *Graph) AllDFS(start string) ReturnJSON {
 	return result
 }
 
-func (g *Graph) BFS(start string) {
+func (g *Graph) SingleDFS(start string) ReturnJSON {
 	startIdx, exists := g.NameToIndex[start]
 	if !exists {
 		fmt.Println("Element not found!")
-		return
+		return ReturnJSON{Name: start + " not found!"}
 	}
+
+	result := ReturnJSON{Name: start}
+	var curID int
 	visited := make(map[int]bool)
 
-	var BFS func(idx int, depth int)
-	BFS = func(idx int, depth int) {
+	var mu sync.Mutex
+	var contentMu sync.Mutex
+	var wg sync.WaitGroup
 
-		queue := []int{}
-		queue = append(queue, idx)
+	var DFSTraversal func(idx int, parent int)
+	DFSTraversal = func(idx int, parent int) {
+		defer wg.Done()
 
-		for len(queue) > 0 {
+		mu.Lock()
+		if visited[idx] {
+			mu.Unlock()
+			return
+		}
+		visited[idx] = true
+		mu.Unlock()
 
-			current := queue[0]
-			queue = queue[1:]
-			fmt.Printf("%s%s\n", strings.Repeat("-", depth), g.Nodes[current].Name)
-			if visited[current] {
-				continue
-			}
-			visited[current] = true
-			recipes := g.Recipes[current]
-			for _, recipe := range recipes {
-				recipe1 := recipe[0]
-				recipe2 := recipe[1]
-				queue = append(queue, recipe1, recipe2)
-			}
-			depth++
-
+		recipes := g.Recipes[idx]
+		if len(recipes) == 0 {
+			return
 		}
 
-	}
-	BFS(startIdx, 0)
+		randomIndex := rand.Intn(len(recipes))
+		recipe := recipes[randomIndex]
 
+		localContent := []NodeJSON{}
+
+		mu.Lock()
+		mergerID := curID + 1
+		in1ID := curID + 2
+		in2ID := curID + 3
+		curID += 3
+		mu.Unlock()
+
+		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: parent})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+		contentMu.Lock()
+		result.Content = append(result.Content, localContent)
+		contentMu.Unlock()
+
+		wg.Add(2)
+		go DFSTraversal(recipe[0], in1ID)
+		go DFSTraversal(recipe[1], in2ID)
+	}
+
+	wg.Add(1)
+	go DFSTraversal(startIdx, 0)
+	wg.Wait()
+
+	return result
+}
+
+func (g *Graph) AllBFS(start string) ReturnJSON {
+	type QueueItem struct {
+		Index  int
+		Parent int
+	}
+
+	startIdx, exists := g.NameToIndex[start]
+	if !exists {
+		return ReturnJSON{Name: start + " not found!"}
+	}
+
+	result := ReturnJSON{Name: start}
+	var curID int
+	visited := make(map[int]bool)
+	queue := []QueueItem{}
+
+	for _, recipe := range g.Recipes[startIdx] {
+		localContent := []NodeJSON{}
+
+		mergerID := curID + 1
+		in1ID := curID + 2
+		in2ID := curID + 3
+		curID += 3
+
+		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: 0})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+		result.Content = append(result.Content, localContent)
+
+		queue = append(queue, QueueItem{Index: recipe[0], Parent: 0})
+		queue = append(queue, QueueItem{Index: recipe[1], Parent: 0})
+	}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		if visited[current.Index] {
+			continue
+		}
+		visited[current.Index] = true
+
+		recipes := g.Recipes[current.Index]
+		for _, recipe := range recipes {
+			localContent := []NodeJSON{}
+
+			mergerID := curID + 1
+			in1ID := curID + 2
+			in2ID := curID + 3
+			curID += 3
+
+			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: current.Parent})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+			result.Content = append(result.Content, localContent)
+
+			queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID})
+			queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID})
+		}
+	}
+
+	return result
+}
+
+func (g *Graph) SingleBFS(start string) ReturnJSON {
+	type QueueItem struct {
+		Index  int
+		Parent int
+		Root   int
+	}
+
+	startIdx, exists := g.NameToIndex[start]
+	if !exists {
+		return ReturnJSON{Name: start + " not found!"}
+	}
+
+	result := ReturnJSON{Name: start}
+	visited := make(map[int]bool)
+	queue := []QueueItem{}
+	var curID int
+
+	recipes := g.Recipes[startIdx]
+
+	required := make([]int, len(recipes))
+	for i := range required {
+		required[i] = 2
+	}
+
+	for i, recipe := range recipes {
+		localContent := []NodeJSON{}
+
+		mergerID := curID + 1
+		in1ID := curID + 2
+		in2ID := curID + 3
+		curID += 3
+
+		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: 0})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+		result.Content = append(result.Content, localContent)
+
+		queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID, Root: i})
+		queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID, Root: i})
+	}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		if visited[current.Index] {
+			required[current.Root]--
+			done := false
+			for _, r := range required {
+				if r <= 0 {
+					done = true
+					break
+				}
+			}
+			if done {
+				break
+			}
+			continue
+		}
+		visited[current.Index] = true
+
+		for _, recipe := range g.Recipes[current.Index] {
+			localContent := []NodeJSON{}
+
+			mergerID := curID + 1
+			in1ID := curID + 2
+			in2ID := curID + 3
+			curID += 3
+
+			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: current.Parent})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
+			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+
+			result.Content = append(result.Content, localContent)
+
+			queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID, Root: current.Root})
+			queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID, Root: current.Root})
+		}
+	}
+
+	return result
 }
 
 func (g *Graph) DebugPrint() {
@@ -174,4 +352,55 @@ func (g *Graph) DebugPrint() {
 		totalEdges += len(recipeList) * 2
 	}
 	fmt.Printf("Number of Edges: %d\n", totalEdges)
+}
+
+// API Handler
+type RequestPayload struct {
+	Element string `json:"element"`
+	Type    string `json:"type"`
+}
+
+func (g *Graph) DFSHandler(w http.ResponseWriter, r *http.Request) {
+	var payload RequestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	var result ReturnJSON
+	switch payload.Type {
+	case "all":
+		result = g.AllDFS(payload.Element)
+	case "one":
+		result = g.SingleDFS(payload.Element)
+	default:
+		http.Error(w, "Invalid type: must be 'one' or 'all'", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (g *Graph) BFSHandler(w http.ResponseWriter, r *http.Request) {
+	var payload RequestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	var result ReturnJSON
+	switch payload.Type {
+	case "all":
+		result = g.AllBFS(payload.Element)
+	case "one":
+		result = g.SingleBFS(payload.Element)
+		return
+	default:
+		http.Error(w, "Invalid type: must be 'one' or 'all'", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
