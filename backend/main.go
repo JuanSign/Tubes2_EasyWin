@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"backend/graph"
@@ -32,23 +33,14 @@ func main() {
 	g := graph.NewGraph()
 	g.BuildFromElements(elements)
 
-	// for debugging
-	// g.DebugPrint()
+	http.HandleFunc("/dfs", g.DFSHandler)
+	http.HandleFunc("/bfs", g.BFSHandler)
 
-	// example AllDFS usage
-	// dfsResult := g.AllDFS("Air")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-	// dfsResultJSON, err := json.MarshalIndent(dfsResult, "", "  ")
-	// if err != nil {
-	// 	fmt.Println("Error converting to JSON:", err)
-	// 	return
-	// }
-
-	// err = os.WriteFile("dfs_result.json", dfsResultJSON, 0644)
-	// if err != nil {
-	// 	fmt.Println("Error writing to file:", err)
-	// 	return
-	// }
-
-	// fmt.Println("DFS result saved to dfs_result.json")
+	fmt.Printf("Server running on port %s\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
