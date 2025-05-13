@@ -215,8 +215,8 @@ func (g *Graph) AllBFS(start string) ReturnJSON {
 
 		result.Content = append(result.Content, localContent)
 
-		queue = append(queue, QueueItem{Index: recipe[0], Parent: 0})
-		queue = append(queue, QueueItem{Index: recipe[1], Parent: 0})
+		queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID})
+		queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID})
 	}
 
 	for len(queue) > 0 {
@@ -395,7 +395,6 @@ func (g *Graph) BFSHandler(w http.ResponseWriter, r *http.Request) {
 		result = g.AllBFS(payload.Element)
 	case "one":
 		result = g.SingleBFS(payload.Element)
-		return
 	default:
 		http.Error(w, "Invalid type: must be 'one' or 'all'", http.StatusBadRequest)
 		return
