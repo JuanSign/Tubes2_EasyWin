@@ -24,6 +24,21 @@ func loadElements(filePath string) ([]graph.Element, error) {
 	return elements, nil
 }
 
+func withCORS(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		handler(w, r)
+	}
+}
+
 func main() {
 	elements, err := loadElements("elements.json")
 	if err != nil {
@@ -33,8 +48,8 @@ func main() {
 	g := graph.NewGraph()
 	g.BuildFromElements(elements)
 
-	http.HandleFunc("/dfs", g.DFSHandler)
-	http.HandleFunc("/bfs", g.BFSHandler)
+	http.HandleFunc("/dfs", withCORS(g.DFSHandler))
+	http.HandleFunc("/bfs", withCORS(g.BFSHandler))
 
 	port := os.Getenv("PORT")
 	if port == "" {
