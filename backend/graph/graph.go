@@ -70,54 +70,74 @@ func (g *Graph) AllDFS(start string) ReturnJSON {
 		return ReturnJSON{Name: start + " not found!"}
 	}
 
-	result := ReturnJSON{Name: start}
-	var curID int
-	visited := make(map[int]bool)
+	var (
+		result     = ReturnJSON{Name: start}
+		curID      = 0
+		curIDMutex sync.Mutex
 
-	var mu sync.Mutex
-	var contentMu sync.Mutex
-	var wg sync.WaitGroup
+		visited      = make(map[int]bool)
+		visitedMutex sync.Mutex
+
+		resultMutex sync.Mutex
+		wg          sync.WaitGroup
+		sem         = make(chan struct{}, 5) // limit to 5 concurrent goroutines
+	)
 
 	var DFSTraversal func(idx int, parent int)
 	DFSTraversal = func(idx int, parent int) {
 		defer wg.Done()
 
-		mu.Lock()
+		visitedMutex.Lock()
 		if visited[idx] {
-			mu.Unlock()
+			visitedMutex.Unlock()
 			return
 		}
 		visited[idx] = true
-		mu.Unlock()
+		visitedMutex.Unlock()
 
 		for _, recipe := range g.Recipes[idx] {
 			localContent := []NodeJSON{}
 
-			mu.Lock()
+			curIDMutex.Lock()
 			mergerID := curID + 1
 			in1ID := curID + 2
 			in2ID := curID + 3
 			curID += 3
-			mu.Unlock()
+			curIDMutex.Unlock()
 
 			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: parent})
 			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
 			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
 
-			contentMu.Lock()
+			resultMutex.Lock()
 			result.Content = append(result.Content, localContent)
-			contentMu.Unlock()
+			resultMutex.Unlock()
 
-			wg.Add(2)
-			go DFSTraversal(recipe[0], in1ID)
-			go DFSTraversal(recipe[1], in2ID)
+			// Launch parallel traversal
+			sem <- struct{}{} // acquire a slot
+			wg.Add(1)
+			go func(childIdx, childParent int) {
+				defer func() { <-sem }() // release slot
+				DFSTraversal(childIdx, childParent)
+			}(recipe[0], in1ID)
+
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(childIdx, childParent int) {
+				defer func() { <-sem }()
+				DFSTraversal(childIdx, childParent)
+			}(recipe[1], in2ID)
 		}
 	}
 
+	sem <- struct{}{}
 	wg.Add(1)
-	go DFSTraversal(startIdx, 0)
-	wg.Wait()
+	go func() {
+		defer func() { <-sem }()
+		DFSTraversal(startIdx, 0)
+	}()
 
+	wg.Wait()
 	return result
 }
 
@@ -132,56 +152,42 @@ func (g *Graph) SingleDFS(start string) ReturnJSON {
 	var curID int
 	visited := make(map[int]bool)
 
-	var mu sync.Mutex
-	var contentMu sync.Mutex
-	var wg sync.WaitGroup
-
 	var DFSTraversal func(idx int, parent int)
 	DFSTraversal = func(idx int, parent int) {
-		defer wg.Done()
-
-		mu.Lock()
 		if visited[idx] {
-			mu.Unlock()
 			return
 		}
 		visited[idx] = true
-		mu.Unlock()
 
 		recipes := g.Recipes[idx]
 		if len(recipes) == 0 {
 			return
 		}
 
-		randomIndex := rand.Intn(len(recipes))
-		recipe := recipes[randomIndex]
+		// Pick one random recipe to follow
+		recipe := recipes[rand.Intn(len(recipes))]
 
-		localContent := []NodeJSON{}
-
-		mu.Lock()
+		// Allocate new IDs
 		mergerID := curID + 1
 		in1ID := curID + 2
 		in2ID := curID + 3
 		curID += 3
-		mu.Unlock()
 
-		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: parent})
-		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
-		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
+		// Create node group and append to result
+		localContent := []NodeJSON{
+			{Name: "merger", Id: mergerID, Parent: parent},
+			{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID},
+			{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID},
+		}
 
-		contentMu.Lock()
 		result.Content = append(result.Content, localContent)
-		contentMu.Unlock()
 
-		wg.Add(2)
-		go DFSTraversal(recipe[0], in1ID)
-		go DFSTraversal(recipe[1], in2ID)
+		// Recursively traverse inputs
+		DFSTraversal(recipe[0], in1ID)
+		DFSTraversal(recipe[1], in2ID)
 	}
 
-	wg.Add(1)
-	go DFSTraversal(startIdx, 0)
-	wg.Wait()
-
+	DFSTraversal(startIdx, 0)
 	return result
 }
 
@@ -196,58 +202,101 @@ func (g *Graph) AllBFS(start string) ReturnJSON {
 		return ReturnJSON{Name: start + " not found!"}
 	}
 
-	result := ReturnJSON{Name: start}
-	var curID int
-	visited := make(map[int]bool)
-	queue := []QueueItem{}
+	var (
+		result       = ReturnJSON{Name: start}
+		curID        = 0
+		queue        = []QueueItem{}
+		queueMutex   sync.Mutex
+		visited      = make(map[int]bool)
+		visitedMutex sync.Mutex
+		resultMutex  sync.Mutex
+		curIDMutex   sync.Mutex
+		wg           sync.WaitGroup
+		sem          = make(chan struct{}, 5) // limit to 5 goroutines
+	)
 
+	enqueue := func(index, parent int) {
+		queueMutex.Lock()
+		queue = append(queue, QueueItem{Index: index, Parent: parent})
+		queueMutex.Unlock()
+	}
+
+	// Initialize with start node
 	for _, recipe := range g.Recipes[startIdx] {
 		localContent := []NodeJSON{}
 
+		curIDMutex.Lock()
 		mergerID := curID + 1
 		in1ID := curID + 2
 		in2ID := curID + 3
 		curID += 3
+		curIDMutex.Unlock()
 
 		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: 0})
 		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
 		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
 
+		resultMutex.Lock()
 		result.Content = append(result.Content, localContent)
+		resultMutex.Unlock()
 
-		queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID})
-		queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID})
+		enqueue(recipe[0], in1ID)
+		enqueue(recipe[1], in2ID)
 	}
 
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-
-		if visited[current.Index] {
-			continue
+	processNode := func(item QueueItem) {
+		defer wg.Done()
+		visitedMutex.Lock()
+		if visited[item.Index] {
+			visitedMutex.Unlock()
+			return
 		}
-		visited[current.Index] = true
+		visited[item.Index] = true
+		visitedMutex.Unlock()
 
-		recipes := g.Recipes[current.Index]
-		for _, recipe := range recipes {
+		for _, recipe := range g.Recipes[item.Index] {
 			localContent := []NodeJSON{}
 
+			curIDMutex.Lock()
 			mergerID := curID + 1
 			in1ID := curID + 2
 			in2ID := curID + 3
 			curID += 3
+			curIDMutex.Unlock()
 
-			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: current.Parent})
+			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: item.Parent})
 			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
 			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
 
+			resultMutex.Lock()
 			result.Content = append(result.Content, localContent)
+			resultMutex.Unlock()
 
-			queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID})
-			queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID})
+			enqueue(recipe[0], in1ID)
+			enqueue(recipe[1], in2ID)
 		}
 	}
 
+	// Main loop
+	for {
+		queueMutex.Lock()
+		if len(queue) == 0 {
+			queueMutex.Unlock()
+			break
+		}
+		item := queue[0]
+		queue = queue[1:]
+		queueMutex.Unlock()
+
+		sem <- struct{}{} // acquire
+		wg.Add(1)
+		go func(it QueueItem) {
+			defer func() { <-sem }() // release
+			processNode(it)
+		}(item)
+	}
+
+	wg.Wait()
 	return result
 }
 
@@ -265,29 +314,30 @@ func (g *Graph) SingleBFS(start string) ReturnJSON {
 
 	result := ReturnJSON{Name: start}
 	visited := make(map[int]bool)
-	queue := []QueueItem{}
 	var curID int
+	queue := []QueueItem{}
 
 	recipes := g.Recipes[startIdx]
+	if len(recipes) == 0 {
+		return result
+	}
 
 	required := make([]int, len(recipes))
 	for i := range required {
-		required[i] = 2
+		required[i] = 2 // each recipe has 2 ingredients
 	}
 
 	for i, recipe := range recipes {
-		localContent := []NodeJSON{}
-
 		mergerID := curID + 1
 		in1ID := curID + 2
 		in2ID := curID + 3
 		curID += 3
 
-		localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: 0})
-		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
-		localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
-
-		result.Content = append(result.Content, localContent)
+		result.Content = append(result.Content, []NodeJSON{
+			{Name: "merger", Id: mergerID, Parent: 0},
+			{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID},
+			{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID},
+		})
 
 		queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID, Root: i})
 		queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID, Root: i})
@@ -299,10 +349,11 @@ func (g *Graph) SingleBFS(start string) ReturnJSON {
 
 		if visited[current.Index] {
 			required[current.Root]--
-			done := false
+			// If all roots are satisfied, stop
+			done := true
 			for _, r := range required {
-				if r <= 0 {
-					done = true
+				if r > 0 {
+					done = false
 					break
 				}
 			}
@@ -313,23 +364,27 @@ func (g *Graph) SingleBFS(start string) ReturnJSON {
 		}
 		visited[current.Index] = true
 
-		for _, recipe := range g.Recipes[current.Index] {
-			localContent := []NodeJSON{}
-
-			mergerID := curID + 1
-			in1ID := curID + 2
-			in2ID := curID + 3
-			curID += 3
-
-			localContent = append(localContent, NodeJSON{Name: "merger", Id: mergerID, Parent: current.Parent})
-			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID})
-			localContent = append(localContent, NodeJSON{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID})
-
-			result.Content = append(result.Content, localContent)
-
-			queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID, Root: current.Root})
-			queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID, Root: current.Root})
+		recipes := g.Recipes[current.Index]
+		if len(recipes) == 0 {
+			continue
 		}
+
+		// Pick one recipe randomly
+		recipe := recipes[rand.Intn(len(recipes))]
+
+		mergerID := curID + 1
+		in1ID := curID + 2
+		in2ID := curID + 3
+		curID += 3
+
+		result.Content = append(result.Content, []NodeJSON{
+			{Name: "merger", Id: mergerID, Parent: current.Parent},
+			{Name: g.Nodes[recipe[0]].Name, Id: in1ID, Parent: mergerID},
+			{Name: g.Nodes[recipe[1]].Name, Id: in2ID, Parent: mergerID},
+		})
+
+		queue = append(queue, QueueItem{Index: recipe[0], Parent: in1ID, Root: current.Root})
+		queue = append(queue, QueueItem{Index: recipe[1], Parent: in2ID, Root: current.Root})
 	}
 
 	return result
